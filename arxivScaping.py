@@ -60,7 +60,7 @@ for keyword in keywords:
 
         # Extract journal_ref
         journal_ref = entry.find('{http://arxiv.org/schemas/atom}journal_ref')
-        journal_ref_text = journal_ref.text if journal_ref is not None else "No journal reference provided"
+        journal_ref_text = journal_ref.text if journal_ref is not None else None
 
         # Create a dictionary for the current entry
         entry_data = {
