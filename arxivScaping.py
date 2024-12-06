@@ -3,7 +3,6 @@ import xml.etree.ElementTree as ET
 import json
 import time
 
-# Define the keywords to search for
 keywords = [
     "Computer",
     "Economics",
@@ -16,7 +15,7 @@ keywords = [
 ]
 
 # URL to search ArXiv API with the search term (replace space with "+")
-base_url = 'http://export.arxiv.org/api/query?search_query=all:{}&start=0&max_results=125'
+base_url = 'http://export.arxiv.org/api/query?search_query=all:{}&start=0&max_results=1000'
 
 # List to hold all extracted data in JSON format
 data_list = []
