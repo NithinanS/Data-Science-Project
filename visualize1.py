@@ -11,29 +11,69 @@ import networkx as nx
 import geopandas as gpd
 from shapely.geometry import Point
 from pyvis.network import Network
-import plotly.graph_objects as go
 
-df2018 = pd.read_csv("FilteredDataWithYear/data2018.csv")
-df2019 = pd.read_csv("FilteredDataWithYear/data2019.csv")
-df2020 = pd.read_csv("FilteredDataWithYear/data2020.csv")
-df2021 = pd.read_csv("FilteredDataWithYear/data2021.csv")
-df2022 = pd.read_csv("FilteredDataWithYear/data2022.csv")
-df2023 = pd.read_csv("FilteredDataWithYear/data2023.csv")
+df2018 = pd.read_csv("data/Data2018.csv")
+df2019 = pd.read_csv("data/Data2019.csv")
+df2020 = pd.read_csv("data/Data2020.csv")
+df2021 = pd.read_csv("data/Data2021.csv")
+df2022 = pd.read_csv("data/Data2022.csv")
+df2023 = pd.read_csv("data/Data2023.csv")
 
 df_all_years = pd.concat([df2018, df2019, df2020, df2021, df2022, df2023])
 
 df_all_years["keyword"] = df_all_years["keyword"].apply(lambda x: eval(x))
 
+@st.cache_data
+def detect_communities(edges_str: str):
+    """Community detection using greedy modularity communities"""
+    # Recreate graph from edges string
+    edges = eval(edges_str)
+    G = nx.Graph(edges)
+    return list(nx.community.greedy_modularity_communities(G))
+
+st.set_page_config(page_title="Data Visualization", layout="wide")
+
 st.title("Data Visualization")
+
+st.markdown(
+    """
+    <style>
+    .sidebar-title {
+        font-size: 20px;
+        font-weight: bold;
+        margin-bottom: 20px;
+        color: #444444;
+    }
+    .stSelectbox label {
+        font-size: 16px;
+        font-weight: bold;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+st.sidebar.markdown(
+    '<div class="sidebar-title">🗒️ Select Page</div>', 
+    unsafe_allow_html=True
+)
 
 topic = st.sidebar.selectbox(
     "Select Topic",
     [
         "Overview",
         "Data Visualization",
-        "Spatial Data Visualization",
         "Network Visualization",
     ],
+    format_func=lambda x: (
+        f"📄 {x}"
+        if x == "Overview"
+        else (
+            f"📊 {x}"
+            if x == "Data Visualization"
+            else f"🔗 {x}" if x == "Network Visualization" else x
+        )
+    ),
 )
 
 if topic == "Overview":
@@ -132,7 +172,45 @@ elif topic == "Data Visualization":
         data2021 = df2021["subjectCode"].value_counts().reset_index()
         data2022 = df2022["subjectCode"].value_counts().reset_index()
         data2023 = df2023["subjectCode"].value_counts().reset_index()
+        data2018["Year"] = "2018"
+        data2019["Year"] = "2019"
+        data2020["Year"] = "2020"
+        data2021["Year"] = "2021"
+        data2022["Year"] = "2022"
+        data2023["Year"] = "2023"
 
+        combined_data = pd.concat(
+            [data2018, data2019, data2020, data2021, data2022, data2023]
+        )
+        combined_data.columns = ["Subject", "Count", "Year"]
+        selected_subjects = ["MEDI", "ENGI", "PHYS", "BIOC", "COMP", "CHEM", "MATE"]
+        filtered_data = combined_data[combined_data["Subject"].isin(selected_subjects)]
+        stackData = filtered_data.pivot_table(
+            index="Subject", columns="Year", values="Count", aggfunc="sum", fill_value=0
+        )
+        stackData = stackData.reset_index()
+        years = st.multiselect(
+            "Select Years",
+            options=["2018", "2019", "2020", "2021", "2022", "2023"],
+            default=["2018", "2019", "2020", "2021", "2022", "2023"],
+        )
+
+        if years:
+            filtered_stack_data = stackData[["Subject"] + years]
+            fig1, ax1 = plt.subplots(figsize=(10, 6))
+            data_transposed = filtered_stack_data.set_index("Subject").T
+            data_transposed.plot(kind="barh", stacked=True, ax=ax1, colormap="Set2")
+
+            ax1.set_title("Trend of Research Papers by Subject", fontsize=16)
+            ax1.set_xlabel("Number of Papers", fontsize=12)
+            ax1.set_ylabel("Year", fontsize=12)
+            ax1.legend(title="Subject", bbox_to_anchor=(1.05, 1), loc="upper left")
+            ax1.grid(axis="x", linestyle="--", alpha=0.6)
+            st.pyplot(fig1)
+        else:
+            st.warning("Please select at least one year to view the trends.")
+
+        st.write("---")
         year_data_map = {
             "2018": data2018,
             "2019": data2019,
@@ -141,12 +219,74 @@ elif topic == "Data Visualization":
             "2022": data2022,
             "2023": data2023,
         }
-
-        years = st.multiselect(
-            "Select Years",
-            options=["2018", "2019", "2020", "2021", "2022", "2023"],
-            default=["2018", "2019", "2020", "2021", "2022", "2023"],
+        st.header("Trend of Top Subjects Over Years")
+        subjectfull = st.selectbox(
+            "Select Subject",
+            [
+                "Medical",
+                "Engineer",
+                "Physics",
+                "Biochemistry",
+                "Computer",
+                "Chemistry",
+                "Material",
+            ],
         )
+        subject_map = {
+            "Medical": "MEDI",
+            "Engineer": "ENGI",
+            "Physics": "PHYS",
+            "Biochemistry": "BIOC",
+            "Computer": "COMP",
+            "Chemistry": "CHEM",
+            "Material": "MATE",
+        }
+        subject = subject_map.get(subjectfull)
+
+        for year, data in year_data_map.items():
+            data["subjectCode"] = data["subjectCode"].apply(
+                lambda x: (
+                    x
+                    if isinstance(x, str)
+                    else " ".join(x) if isinstance(x, list) else ""
+                )
+            )
+
+        filtered_data = pd.concat(
+            [
+                year_data_map[year][
+                    year_data_map[year]["subjectCode"].str.contains(
+                        subject, case=False, na=False
+                    )
+                ].assign(Year=year)
+                for year in years
+            ]
+        )
+
+        data_summary = filtered_data.groupby("Year")["count"].sum().reset_index()
+
+        st.write(f"### Description:")
+        st.write(
+            f"The chart below displays the trend of **{subjectfull}** papers over the selected years. "
+            "The count of papers represents the number of times the selected subject appeared in each year's data."
+        )
+        fig = px.line(
+            data_summary,
+            x="Year",
+            y="count",
+            title=f"Trend of {subjectfull} Papers Over Years",
+            line_shape="spline",
+            color_discrete_sequence=px.colors.qualitative.Set1,
+        )
+        st.plotly_chart(fig)
+        st.write(f"### Statistical Summary {subjectfull} Papers:")
+        min_count = data_summary["count"].min()
+        max_count = data_summary["count"].max()
+        mean_count = data_summary["count"].mean()
+        std_dev_count = data_summary["count"].std()
+        st.write(f"- **Minimum Count**: {min_count}")
+        st.write(f"- **Maximum Count**: {max_count}")
+        st.write(f"- **Mean Count**: {mean_count:.2f}")
 
     else:
         year_data_map = {
@@ -171,6 +311,8 @@ elif topic == "Data Visualization":
                 x="Subject Code",
                 y="Count",
                 labels={"Subject Code": "Subject", "Count": "Count"},
+                color="Subject Code",
+                color_discrete_sequence=px.colors.qualitative.Set3,
             )
             st.plotly_chart(fig)
 
@@ -206,236 +348,197 @@ elif topic == "Data Visualization":
         else:
             st.error("Selected year data is unavailable.")
 
-elif topic == "Spatial Data Visualization":
-    st.header("Spatial Data Visualization !! ยังไม่ทำ !!!")
-
-    # spatial_data = {
-    #     "Latitude": np.random.uniform(-90, 90, len(df_all_years)),
-    #     "Longitude": np.random.uniform(-180, 180, len(df_all_years)),
-    #     "Title": df_all_years["title"],
-    #     "Year": df_all_years["year"],
-    # }
-    # spatial_df = pd.DataFrame(spatial_data)
-
-    # st.subheader("Geographical Distribution of Publications")
-
-    # geometry = [
-    #     Point(xy) for xy in zip(spatial_df["Longitude"], spatial_df["Latitude"])
-    # ]
-    # gdf = gpd.GeoDataFrame(spatial_df, geometry=geometry)
-
-    # fig = px.scatter_geo(
-    #     gdf,
-    #     lat="Latitude",
-    #     lon="Longitude",
-    #     text="Title",
-    #     color="Year",
-    #     title="Geographical Distribution of Publications (by Year)",
-    # )
-    # st.plotly_chart(fig)
 elif topic == "Network Visualization":
-    st.title("Network Visualization Tool")
+    st.header("Network Visualization")
 
-    # Input: Network data
-    with st.sidebar:
-        st.subheader("Choose Network Data")
-        data_source = st.radio(
-            "Select data source",
-            ["Sample Networks", "Graph Generator", "Upload Network"],
+    # Sidebar for sample size selection
+    sample_size = st.sidebar.slider(
+        "Select the number of samples for network visualization",
+        min_value=10,
+        max_value=50,
+        value=20,
+        step=5,
+    )
+
+    # Randomly sample data for visualization
+    sample_data = df_all_years.sample(n=sample_size, random_state=42)
+
+    # Generate edges for the graph from the 'keyword' column
+    edges = []
+    for keywords in sample_data["keyword"]:
+        for i, k1 in enumerate(keywords[:-1]):
+            for k2 in keywords[i + 1 :]:
+                edges.append((k1, k2))
+
+    # Initialize the graph using NetworkX
+    G = nx.Graph()
+    G.add_edges_from(edges)
+
+    # Sidebar options for layout and centrality measure
+    layout_option = st.sidebar.selectbox(
+        "Select layout for visualization",
+        ["spring", "kamada_kawai", "circular", "random"],
+    )
+
+    centrality_option = st.sidebar.selectbox(
+        "Choose node size by centrality measure",
+        ["closeness", "degree", "betweenness", "pagerank"],
+    )
+
+    # # Sidebar sliders for customization
+    # node_size_range = st.sidebar.slider(
+    #     "Node Size Range",
+    #     min_value=5,
+    #     max_value=200,
+    #     value=(10, 50),
+    #     step=5,
+    # )
+
+    graph_size = st.sidebar.slider(
+        "Graph Size",
+        min_value=500,
+        max_value=3000,
+        value=1400,
+        step=100,
+    )
+
+    # Adjust node spacing for spring layout
+    if layout_option == "spring":
+        node_spacing = st.sidebar.slider(
+            "Node Spacing",
+            min_value=1.0,
+            max_value=20.0,
+            value=6.0,
+            step=1.0,
+        )
+    else:
+        node_spacing = 2.0
+
+    # Font size and style for node labels
+    font_size = st.sidebar.slider(
+        "Label Font Size",
+        min_value=2,
+        max_value=40,
+        value=6,
+        step=2,
+    )
+
+    font_style = st.sidebar.selectbox(
+        "Select Font Style",
+        ["Arial", "Comic Sans MS", "Courier New", "Tahoma", "Times New Roman"],
+        index=0,
+    )
+
+    # Option to show or hide edges
+    show_edges = st.sidebar.checkbox("Show Edges", value=True)
+
+    # Apply layout algorithm based on selection
+    if layout_option == "spring":
+        pos = nx.spring_layout(G, k=node_spacing / 10.0)
+    elif layout_option == "kamada_kawai":
+        pos = nx.kamada_kawai_layout(G)
+    elif layout_option == "circular":
+        pos = nx.circular_layout(G)
+    else:
+        pos = nx.random_layout(G)
+
+    # Apply centrality measure to determine node sizes
+    if centrality_option == "degree":
+        centrality = nx.degree_centrality(G)
+    elif centrality_option == "betweenness":
+        centrality = nx.betweenness_centrality(G)
+    elif centrality_option == "pagerank":
+        centrality = nx.pagerank(G)
+    else:
+        centrality = nx.closeness_centrality(G)
+
+    # Node sizes based on centrality measure
+    node_sizes = [centrality[node] * 1000 for node in G.nodes]
+
+    # Detect communities if requested
+    st.markdown("---")  # Add separator
+    show_communities = st.sidebar.checkbox("Detect Communities")
+    communities = None
+    community_stats_container = st.empty()  # Placeholder for community stats
+
+    if show_communities:
+        try:
+            # Detect communities
+            edges_str = str(list(G.edges()))
+            communities_iter = detect_communities(edges_str)
+            communities = {}
+
+            # Create a list to store community sizes
+            community_sizes = []
+
+            for idx, community in enumerate(communities_iter):
+                community_sizes.append(len(community))
+                for node in community:
+                    communities[node] = idx
+
+            # Display community statistics
+            with community_stats_container.container():
+                st.caption("Community Statistics")
+                st.metric("Number of Communities", len(communities_iter))
+                avg_size = sum(community_sizes) / len(community_sizes)
+                st.metric("Average Community Size", f"{avg_size:.1f}")
+
+                # Sort communities by size
+                community_df = pd.DataFrame(
+                    {"Community": range(len(community_sizes)), "Size": community_sizes}
+                ).sort_values("Size", ascending=False)
+
+                st.caption("Community Sizes (sorted by size):")
+                st.dataframe(
+                    community_df,
+                    hide_index=True,
+                    height=min(len(community_sizes) * 35 + 38, 300),
+                )
+
+        except Exception as e:
+            st.warning(f"Could not detect communities: {str(e)}")
+
+    # Visualize the graph using matplotlib and networkx
+    fig, ax = plt.subplots(figsize=(10, 8))  # Set the figure size
+
+    # Conditionally draw edges
+    if show_edges:
+        nx.draw(
+            G,
+            pos,
+            ax=ax,
+            with_labels=True,
+            node_size=node_sizes,
+            node_color="skyblue",
+            font_size=font_size,
+            font_family=font_style,
+            font_weight="light",
+            edge_color="gray",
+        )
+    else:
+        nx.draw_networkx_nodes(
+            G,
+            pos,
+            ax=ax,
+            node_size=node_sizes,
+            font_family=font_style,
+            node_color="skyblue",
+        )
+        nx.draw_networkx_labels(
+            G,
+            pos,
+            ax=ax,
+            font_size=font_size,
+            font_family=font_style,
+            font_weight="light",
         )
 
-        G = None  # Initialize graph
+    # Display the plot in Streamlit
+    st.pyplot(fig)
 
-        # Sample Networks
-        if data_source == "Sample Networks":
-            sample_option = st.selectbox(
-                "Select sample network", ["Karate Club", "Les Miserables"]
-            )
-            if sample_option == "Karate Club":
-                G = nx.karate_club_graph()
-            elif sample_option == "Les Miserables":
-                G = nx.les_miserables_graph()
-
-        # Graph Generator
-        elif data_source == "Graph Generator":
-            generator_type = st.selectbox(
-                "Select generator type",
-                [
-                    "Complete Graph",
-                    "Random (Erdős-Rényi)",
-                    "Small World (Watts-Strogatz)",
-                    "Scale-free (Barabási-Albert)",
-                ],
-            )
-
-            if generator_type == "Complete Graph":
-                n = st.slider("Number of nodes", 3, 100, 20)
-                G = nx.complete_graph(n)
-
-            elif generator_type == "Random (Erdős-Rényi)":
-                n = st.slider("Number of nodes", 3, 100, 20)
-                p = st.slider("Edge probability", 0.0, 1.0, 0.2)
-                G = nx.erdos_renyi_graph(n, p)
-
-            elif generator_type == "Small World (Watts-Strogatz)":
-                n = st.slider("Number of nodes", 100, 1000, 200)
-                k = st.slider("Number of nearest neighbors", 4, 20, 6)
-                p = st.slider("Rewiring probability", 0.0, 1.0, 0.1)
-                G = nx.watts_strogatz_graph(n, k, p)
-
-            elif generator_type == "Scale-free (Barabási-Albert)":
-                n = st.slider("Number of nodes", 100, 1000, 200)
-                m = st.slider("Number of edges to attach", 1, 10, 3)
-                G = nx.barabasi_albert_graph(n, m)
-
-        # Upload Network
-        elif data_source == "Upload Network":
-            file_format = st.selectbox("Choose file format", ["CSV", "GML", "GraphML"])
-            uploaded_file = st.file_uploader(
-                "Upload network file", type=["csv", "gml", "graphml"]
-            )
-
-            if uploaded_file:
-                G = load_network_from_file(uploaded_file, file_format)
-                if G is None:
-                    st.info("Please ensure your file is properly formatted")
-                    st.stop()
-
-            else:
-                st.info("Please upload a network file or use other data sources")
-                st.stop()
-
-    if G is not None:
-        # Visualization Options
-        st.subheader("Visualization Options")
-
-        # Layout selection
-        layout_option = st.selectbox(
-            "Layout Algorithm", ["spring", "kamada_kawai", "circular", "random"]
-        )
-
-        # Centrality metrics selection
-        centrality_option = st.selectbox(
-            "Node Size By", ["degree", "betweenness", "closeness", "pagerank"]
-        )
-
-        # Size controls
-        scale_factor = st.slider(
-            "Graph Size",
-            min_value=500,
-            max_value=3000,
-            value=1000,
-            step=100,
-            help="Adjust the overall size of the graph",
-        )
-
-        if layout_option == "spring":
-            node_spacing = st.slider(
-                "Node Spacing",
-                min_value=1.0,
-                max_value=20.0,
-                value=5.0,
-                step=1.0,
-                help="Adjust the spacing between nodes (only for spring layout)",
-            )
-        else:
-            node_spacing = 2.0
-
-        node_size_range = st.slider(
-            "Node Size Range",
-            min_value=5,
-            max_value=200,
-            value=(10, 50),
-            step=5,
-            help="Set the minimum and maximum node sizes",
-        )
-
-        # Node label font size
-        font_size = st.slider(
-            "Label Font Size",
-            min_value=8,
-            max_value=40,
-            value=16,
-            step=2,
-            help="Adjust the font size of node labels",
-        )
-
-        # Edge visibility toggle
-        show_edges = st.checkbox(
-            "Show Edges", value=True, help="Toggle edge visibility"
-        )
-
-        # Community detection checkbox
-        show_communities = st.checkbox("Detect Communities")
-
-        # Initialize communities variable
-        communities = None
-        community_stats_container = st.empty()  # Create a placeholder for stats
-
-        if show_communities:
-            try:
-                edges_str = str(list(G.edges()))
-                communities_iter = detect_communities(edges_str)
-                communities = {}
-
-                # Create a list to store community sizes
-                community_sizes = []
-
-                for idx, community in enumerate(communities_iter):
-                    community_sizes.append(len(community))
-                    for node in community:
-                        communities[node] = idx
-
-                # Use the placeholder to display community statistics
-                with community_stats_container.container():
-                    st.caption("Community Statistics")
-                    st.metric("Number of Communities", len(communities_iter))
-                    avg_size = sum(community_sizes) / len(community_sizes)
-                    st.metric("Average Community Size", f"{avg_size:.1f}")
-
-                    # Sort communities by size in descending order
-                    community_df = pd.DataFrame(
-                        {
-                            "Community": range(len(community_sizes)),
-                            "Size": community_sizes,
-                        }
-                    ).sort_values("Size", ascending=False)
-
-                    st.caption("Community Sizes (sorted by size):")
-                    st.dataframe(
-                        community_df,
-                        hide_index=True,
-                        height=min(len(community_sizes) * 35 + 38, 300),
-                    )
-
-            except Exception as e:
-                st.warning(f"Could not detect communities: {str(e)}")
-
-        # Main visualization area (now full width)
-        if G is not None:
-            # Initialize analyzers and visualizer
-            analyzer = NetworkAnalyzer(G)
-            visualizer = NetworkVisualizer(G)
-
-            # Display basic stats in a more compact form
-            st.text(
-                f"Nodes: {len(G.nodes())} | Edges: {len(G.edges())} | "
-                f"Density: {nx.density(G):.3f}"
-            )
-
-            # Create and display visualization with increased height
-            html_file = visualizer.create_interactive_network(
-                communities=communities,
-                layout=layout_option,
-                centrality_metric=centrality_option,
-                scale_factor=scale_factor,
-                node_spacing=node_spacing,
-                node_size_range=node_size_range,
-                show_edges=show_edges,
-                font_size=font_size,
-            )
-
-            st.markdown(
-                f'<iframe src="{html_file}" width="100%" height="700px" frameborder="0"></iframe>',
-                unsafe_allow_html=True,
-            )
+    # Word Cloud for keyword frequency
+    st.subheader("Keyword Frequency Word Cloud")
+    all_keywords = sum(sample_data["keyword"], [])
+    word_freq = pd.Series(all_keywords).value_counts()
+    wordcloud = WordCloud(width=800, height=400).generate_from_frequencies(word_freq)
+    st.image(wordcloud.to_array(), use_container_width=True)
