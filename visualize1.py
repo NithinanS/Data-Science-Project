@@ -1,4 +1,4 @@
-import streamlit as st
+import streamlit as st 
 import pandas as pd
 import numpy as np
 import plotly.express as px
@@ -11,23 +11,54 @@ import networkx as nx
 import geopandas as gpd
 from shapely.geometry import Point
 from pyvis.network import Network
+from pymongo import MongoClient
+import ast
 
-df2018 = pd.read_csv("All_data/Data2018.csv")
-df2019 = pd.read_csv("All_data/Data2019.csv")
-df2020 = pd.read_csv("All_data/Data2020.csv")
-df2021 = pd.read_csv("All_data/Data2021.csv")
-df2022 = pd.read_csv("All_data/Data2022.csv")
-df2023 = pd.read_csv("All_data/Data2023.csv")
+# MongoDB connection setup
+MONGO_URI = "mongodb+srv://root:root@dspaper.q2lhg.mongodb.net/"
+DATABASE_NAME = "DSDE"
+COLLECTION_NAMES = ["data2018", "data2019", "data2020", "data2021", "data2022", "data2023"]
 
-df_all_years = pd.concat([df2018, df2019, df2020, df2021, df2022, df2023])
+@st.cache_data
+def load_data_from_mongodb():
+    """Load data from MongoDB."""
+    client = MongoClient(MONGO_URI)
+    db = client[DATABASE_NAME]
+    
+    # Fetch each year's data and store them as individual DataFrames
+    df2018 = pd.DataFrame(list(db["data2018"].find()))
+    df2019 = pd.DataFrame(list(db["data2019"].find()))
+    df2020 = pd.DataFrame(list(db["data2020"].find()))
+    df2021 = pd.DataFrame(list(db["data2021"].find()))
+    df2022 = pd.DataFrame(list(db["data2022"].find()))
+    df2023 = pd.DataFrame(list(db["data2023"].find()))
+    
+    # Process the 'keyword' column safely
+    for df in [df2018, df2019, df2020, df2021, df2022, df2023]:
+        if "keyword" in df.columns:
+            df["keyword"] = df["keyword"].apply(
+                lambda x: ast.literal_eval(x) if isinstance(x, str) else []
+            )
+    
+    return df2018, df2019, df2020, df2021, df2022, df2023
 
-df_all_years["keyword"] = df_all_years["keyword"].apply(lambda x: eval(x))
+# Load data from MongoDB
+df2018, df2019, df2020, df2021, df2022, df2023 = load_data_from_mongodb()
+
+# Combine all years into one DataFrame
+df_all_years = pd.concat([df2018, df2019, df2020, df2021, df2022, df2023], ignore_index=True)
+
+# Check if the 'keyword' column exists before applying transformation
+if "keyword" in df_all_years.columns:
+    df_all_years["keyword"] = df_all_years["keyword"].apply(lambda x: ast.literal_eval(x) if isinstance(x, str) else [])
+else:
+    # If 'keyword' column doesn't exist, create it with empty lists (or handle as needed)
+    df_all_years["keyword"] = pd.Series([], dtype="object")
 
 @st.cache_data
 def detect_communities(edges_str: str):
-    """Community detection using greedy modularity communities"""
-    # Recreate graph from edges string
-    edges = eval(edges_str)
+    """Community detection using greedy modularity communities."""
+    edges = ast.literal_eval(edges_str)  # Safely evaluate the edge string
     G = nx.Graph(edges)
     return list(nx.community.greedy_modularity_communities(G))
 
@@ -114,12 +145,12 @@ elif topic == "Data Visualization":
 
         a1, a2, a3, a4, a5, a6 = st.columns(6)
 
-        for col, year, df in zip(
+        for col, df, year in zip(
             [a1, a2, a3, a4, a5, a6],
-            ["2018", "2019", "2020", "2021", "2022", "2023"],
             [df2018, df2019, df2020, df2021, df2022, df2023],
+            ["2018", "2019", "2020", "2021", "2022", "2023"],
         ):
-            count = df["title"].count()
+            count = df.shape[0]
             with col:
                 st.markdown(
                     f"""
@@ -134,64 +165,56 @@ elif topic == "Data Visualization":
         st.write("---")
 
         st.header("Stacked Bar Chart with Dashboard")
-        data2018 = df2018["subjectCode"].value_counts().reset_index()
-        data2019 = df2019["subjectCode"].value_counts().reset_index()
-        data2020 = df2020["subjectCode"].value_counts().reset_index()
-        data2021 = df2021["subjectCode"].value_counts().reset_index()
-        data2022 = df2022["subjectCode"].value_counts().reset_index()
-        data2023 = df2023["subjectCode"].value_counts().reset_index()
 
-        year_data_map = {
-            "2018": data2018,
-            "2019": data2019,
-            "2020": data2020,
-            "2021": data2021,
-            "2022": data2022,
-            "2023": data2023,
-        }
+    # Generate year_data_map dynamically
+    year_data_map = {
+        "2018": df2018,
+        "2019": df2019,
+        "2020": df2020,
+        "2021": df2021,
+        "2022": df2022,
+        "2023": df2023,
+    }
 
-        years = st.multiselect(
-            "Select Years",
-            options=["2018", "2019", "2020", "2021", "2022", "2023"],
-            default=["2018", "2019", "2020", "2021", "2022", "2023"],
-        )
+    # Multiselect for years
+    years = st.multiselect(
+        "Select Years",
+        options=list(year_data_map.keys()),  # Use dynamic keys
+        default=list(year_data_map.keys())  # Select all years by default
+    )
 
-    else:
-        year_data_map = {
-            "2018": df2018,
-            "2019": df2019,
-            "2020": df2020,
-            "2021": df2021,
-            "2022": df2022,
-            "2023": df2023,
-        }
+    # Filter selected years and create aggregated data
+    if years:
+        aggregated_data = pd.concat([year_data_map[yr] for yr in years], ignore_index=True)
 
-        if year in year_data_map:
-            data = year_data_map[year]
+        if "subjectCode" in aggregated_data.columns:
+            # Aggregate by subjectCode
+            subject_counts = aggregated_data["subjectCode"].value_counts().reset_index()
+            subject_counts.columns = ["Subject Code", "Count"]
 
-            subject_data = data["subjectCode"].value_counts().reset_index()
-            subject_data.columns = ["Subject Code", "Count"]
+            st.header(f"Histogram of Subject Codes for Selected Years")
 
-            st.header(f"Histogram of Subject Codes for {year}")
-
+            # Plot histogram
             fig = px.histogram(
-                subject_data,
+                subject_counts,
                 x="Subject Code",
                 y="Count",
                 labels={"Subject Code": "Subject", "Count": "Count"},
+                title="Distribution of Subject Codes"
             )
             st.plotly_chart(fig)
 
-            top_categories = subject_data["Subject Code"].head(10)
+            # Display top categories
+            top_categories = subject_counts["Subject Code"].head(10)
             st.write("---")
-            st.header(f"Trend of Top 10 Subjects for {year}")
+            st.header(f"Trend of Top 10 Subjects for Selected Years")
 
             categories = st.multiselect(
                 "Select Categories", options=top_categories, default=top_categories
             )
 
             if categories:
-                filtered_data = data[data["subjectCode"].isin(categories)]
+                filtered_data = aggregated_data[aggregated_data["subjectCode"].isin(categories)]
 
                 # Count occurrences of the selected categories
                 category_counts = (
@@ -199,21 +222,21 @@ elif topic == "Data Visualization":
                 )
                 category_counts.columns = ["Subject Code", "Count"]
 
-                # Plot a pie chart instead of a stacked bar chart
+                # Plot pie chart
                 fig1 = px.pie(
                     category_counts,
                     names="Subject Code",
                     values="Count",
-                    title=f"Distribution of Selected Subjects for {year}",
+                    title="Distribution of Selected Categories",
                     labels={"Subject Code": "Subject", "Count": "Count"},
                 )
                 st.plotly_chart(fig1)
-
             else:
-                st.write("Please select at least one category.")
+                st.warning("Please select at least one category.")
         else:
-            st.error("Selected year data is unavailable.")
-
+            st.error("The 'subjectCode' column is missing from the data.")
+    else:
+        st.warning("No years selected. Please select at least one year.")
 elif topic == "Spatial Data Visualization":
     st.header("Spatial Data Visualization !! ยังไม่ทำ !!!")
 
