@@ -1,0 +1,11 @@
+pandas
+numpy
+matplotlib
+plotly
+streamlit
+pyspark
+wordcloud
+networkx
+pyvis
+geopandas
+shapely
