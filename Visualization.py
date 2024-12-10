@@ -516,7 +516,7 @@ elif topic == "Network Visualization":
             plt.cm.tab10
         )
     else:
-        node_colors = ["gray"] * len(G.nodes)
+        node_colors = ["lightblue"] * len(G.nodes)
         # Gray colormap if no communities
         colormap = plt.cm.Greys 
 
@@ -532,7 +532,7 @@ elif topic == "Network Visualization":
             font_size=font_size,
             font_family=font_style,
             font_weight="light",
-            edge_color="gray",
+            edge_color="lightgray",
         )
     else:
         nx.draw_networkx_nodes(
