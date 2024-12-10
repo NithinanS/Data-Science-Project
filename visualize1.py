@@ -12,12 +12,12 @@ import geopandas as gpd
 from shapely.geometry import Point
 from pyvis.network import Network
 
-df2018 = pd.read_csv("FilteredDataWithYear/data2018.csv")
-df2019 = pd.read_csv("FilteredDataWithYear/data2019.csv")
-df2020 = pd.read_csv("FilteredDataWithYear/data2020.csv")
-df2021 = pd.read_csv("FilteredDataWithYear/data2021.csv")
-df2022 = pd.read_csv("FilteredDataWithYear/data2022.csv")
-df2023 = pd.read_csv("FilteredDataWithYear/data2023.csv")
+df2018 = pd.read_csv("/Users/Basil/Documents/01_All/2023_University/Y2_01/2110403_Introduction to Data Science and Data Engineering /Data-Science-Project/All_data/Data2018.csv")
+df2019 = pd.read_csv("/Users/Basil/Documents/01_All/2023_University/Y2_01/2110403_Introduction to Data Science and Data Engineering /Data-Science-Project/All_data/Data2019.csv")
+df2020 = pd.read_csv("/Users/Basil/Documents/01_All/2023_University/Y2_01/2110403_Introduction to Data Science and Data Engineering /Data-Science-Project/All_data/Data2020.csv")
+df2021 = pd.read_csv("/Users/Basil/Documents/01_All/2023_University/Y2_01/2110403_Introduction to Data Science and Data Engineering /Data-Science-Project/All_data/Data2021.csv")
+df2022 = pd.read_csv("/Users/Basil/Documents/01_All/2023_University/Y2_01/2110403_Introduction to Data Science and Data Engineering /Data-Science-Project/All_data/Data2022.csv")
+df2023 = pd.read_csv("/Users/Basil/Documents/01_All/2023_University/Y2_01/2110403_Introduction to Data Science and Data Engineering /Data-Science-Project/All_data/Data2023.csv")
 
 df_all_years = pd.concat([df2018, df2019, df2020, df2021, df2022, df2023])
 
