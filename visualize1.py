@@ -1,16 +1,16 @@
-import streamlit as st
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
 import plotly.express as px
 from plotly.subplots import make_subplots
-import matplotlib.pyplot as plt
+import streamlit as st
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import explode, col
 from wordcloud import WordCloud
 import networkx as nx
+from pyvis.network import Network
 import geopandas as gpd
 from shapely.geometry import Point
-from pyvis.network import Network
 
 df2018 = pd.read_csv("data/Data2018.csv")
 df2019 = pd.read_csv("data/Data2019.csv")
@@ -23,7 +23,8 @@ df_all_years = pd.concat([df2018, df2019, df2020, df2021, df2022, df2023])
 
 df_all_years["keyword"] = df_all_years["keyword"].apply(lambda x: eval(x))
 
-@st.cache_data
+
+@st.cache_data  # Credit: Veera Muangsin
 def detect_communities(edges_str: str):
     """Community detection using greedy modularity communities"""
     # Recreate graph from edges string
@@ -32,7 +33,6 @@ def detect_communities(edges_str: str):
     return list(nx.community.greedy_modularity_communities(G))
 
 st.set_page_config(page_title="Data Visualization", layout="wide")
-
 st.title("Data Visualization")
 
 st.markdown(
@@ -385,15 +385,6 @@ elif topic == "Network Visualization":
         ["closeness", "degree", "betweenness", "pagerank"],
     )
 
-    # # Sidebar sliders for customization
-    # node_size_range = st.sidebar.slider(
-    #     "Node Size Range",
-    #     min_value=5,
-    #     max_value=200,
-    #     value=(10, 50),
-    #     step=5,
-    # )
-
     graph_size = st.sidebar.slider(
         "Graph Size",
         min_value=500,
@@ -418,9 +409,9 @@ elif topic == "Network Visualization":
     font_size = st.sidebar.slider(
         "Label Font Size",
         min_value=2,
-        max_value=40,
-        value=6,
-        step=2,
+        max_value=10,
+        value=5,
+        step=1,
     )
 
     font_style = st.sidebar.selectbox(
@@ -498,10 +489,20 @@ elif topic == "Network Visualization":
         except Exception as e:
             st.warning(f"Could not detect communities: {str(e)}")
 
-    # Visualize the graph using matplotlib and networkx
-    fig, ax = plt.subplots(figsize=(10, 8))  # Set the figure size
+    # Set the figure size
+    fig, ax = plt.subplots(figsize=(10, 8))  
 
-    # Conditionally draw edges
+    if communities:
+        node_colors = [communities.get(node, -1) for node in G.nodes]
+        unique_communities = list(set(node_colors))
+        colormap = (
+            plt.cm.tab10
+        )
+    else:
+        node_colors = ["gray"] * len(G.nodes)
+        # Gray colormap if no communities
+        colormap = plt.cm.Greys 
+
     if show_edges:
         nx.draw(
             G,
@@ -509,7 +510,8 @@ elif topic == "Network Visualization":
             ax=ax,
             with_labels=True,
             node_size=node_sizes,
-            node_color="skyblue",
+            node_color=node_colors,
+            cmap=colormap,
             font_size=font_size,
             font_family=font_style,
             font_weight="light",
@@ -521,22 +523,19 @@ elif topic == "Network Visualization":
             pos,
             ax=ax,
             node_size=node_sizes,
-            font_family=font_style,
-            node_color="skyblue",
+            node_color=node_colors,
+            cmap=colormap,
         )
         nx.draw_networkx_labels(
             G,
             pos,
             ax=ax,
             font_size=font_size,
-            font_family=font_style,
             font_weight="light",
         )
 
-    # Display the plot in Streamlit
     st.pyplot(fig)
 
-    # Word Cloud for keyword frequency
     st.subheader("Keyword Frequency Word Cloud")
     all_keywords = sum(sample_data["keyword"], [])
     word_freq = pd.Series(all_keywords).value_counts()
