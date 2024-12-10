@@ -24,6 +24,7 @@ df_all_years = pd.concat([df2018, df2019, df2020, df2021, df2022, df2023])
 df_all_years["keyword"] = df_all_years["keyword"].apply(lambda x: eval(x))
 
 
+
 @st.cache_data  # Credit: Veera Muangsin
 def detect_communities(edges_str: str):
     """Community detection using greedy modularity communities"""
@@ -345,8 +346,24 @@ elif topic == "Data Visualization":
 
             else:
                 st.write("Please select at least one category.")
-        else:
-            st.error("Selected year data is unavailable.")
+
+            lang = pd.read_csv(f"data/languageData{year}.csv")
+            # st.error("Selected year data is unavailable.")
+            categories = lang["language.@xml:lang"].tolist()
+            values = lang["count"].tolist()
+            N = len(categories)
+            angles = np.linspace(0, 2 * np.pi, N, endpoint=False).tolist()
+            values += values[:1]
+            angles += angles[:1]
+            fig, ax = plt.subplots(figsize=(2, 2), subplot_kw=dict(polar=True))
+            ax.fill(angles, values, color="orange", alpha=0.25)
+            ax.plot(angles, values, color="orange", linewidth=2)
+            ax.set_yticklabels([])
+            ax.set_xticks(angles[:-1])
+            ax.set_xticklabels(categories, fontsize=10)
+            st.write("---")
+            ax.set_title("Language Distribution of Paper (Except English)", fontsize=12)
+            st.pyplot(fig)
 
 elif topic == "Network Visualization":
     st.header("Network Visualization")
