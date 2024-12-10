@@ -11,6 +11,7 @@ import networkx as nx
 import geopandas as gpd
 from shapely.geometry import Point
 from pyvis.network import Network
+import plotly.graph_objects as go
 
 df2018 = pd.read_csv("FilteredDataWithYear/data2018.csv")
 df2019 = pd.read_csv("FilteredDataWithYear/data2019.csv")
@@ -22,15 +23,6 @@ df2023 = pd.read_csv("FilteredDataWithYear/data2023.csv")
 df_all_years = pd.concat([df2018, df2019, df2020, df2021, df2022, df2023])
 
 df_all_years["keyword"] = df_all_years["keyword"].apply(lambda x: eval(x))
-
-@st.cache_data
-def detect_communities(edges_str: str):
-    """Community detection using greedy modularity communities"""
-    # Recreate graph from edges string
-    edges = eval(edges_str)
-    G = nx.Graph(edges)
-    return list(nx.community.greedy_modularity_communities(G))
-
 
 st.title("Data Visualization")
 
@@ -241,177 +233,209 @@ elif topic == "Spatial Data Visualization":
     #     title="Geographical Distribution of Publications (by Year)",
     # )
     # st.plotly_chart(fig)
-
 elif topic == "Network Visualization":
-    st.header("Network Visualization")
+    st.title("Network Visualization Tool")
 
-    # Sidebar for sample size selection
-    sample_size = st.sidebar.slider(
-        "Select the number of samples for network visualization",
-        min_value=10,
-        max_value=50,
-        value=20,
-        step=5,
-    )
-
-    # Randomly sample data for visualization
-    sample_data = df_all_years.sample(n=sample_size, random_state=42)
-
-    # Generate edges for the graph from the 'keyword' column
-    edges = []
-    for keywords in sample_data["keyword"]:
-        for i, k1 in enumerate(keywords[:-1]):
-            for k2 in keywords[i + 1 :]:
-                edges.append((k1, k2))
-
-    # Initialize the graph using NetworkX
-    G = nx.Graph()
-    G.add_edges_from(edges)
-
-    # Sidebar options for layout and centrality measure
-    layout_option = st.sidebar.selectbox(
-        "Select layout for visualization",
-        ["spring", "kamada_kawai", "circular", "random"],
-    )
-
-    centrality_option = st.sidebar.selectbox(
-        "Choose node size by centrality measure",
-        ["degree", "betweenness", "closeness", "pagerank"],
-    )
-
-    # Sidebar sliders for customization
-    node_size_range = st.sidebar.slider(
-        "Node Size Range",
-        min_value=5,
-        max_value=200,
-        value=(10, 50),
-        step=5,
-    )
-
-    graph_size = st.sidebar.slider(
-        "Graph Size",
-        min_value=500,
-        max_value=3000,
-        value=1000,
-        step=100,
-    )
-
-    # Adjust node spacing for spring layout
-    if layout_option == "spring":
-        node_spacing = st.sidebar.slider(
-            "Node Spacing",
-            min_value=1.0,
-            max_value=20.0,
-            value=5.0,
-            step=1.0,
+    # Input: Network data
+    with st.sidebar:
+        st.subheader("Choose Network Data")
+        data_source = st.radio(
+            "Select data source",
+            ["Sample Networks", "Graph Generator", "Upload Network"],
         )
-    else:
-        node_spacing = 2.0
 
-    # Font size and style for node labels
-    font_size = st.sidebar.slider(
-        "Label Font Size",
-        min_value=8,
-        max_value=40,
-        value=16,
-        step=2,
-    )
+        G = None  # Initialize graph
 
-    font_style = st.sidebar.selectbox(
-        "Select Font Style",
-        ["Arial", "Comic Sans MS", "Courier New", "Tahoma", "Times New Roman"],
-        index=0,
-    )
+        # Sample Networks
+        if data_source == "Sample Networks":
+            sample_option = st.selectbox(
+                "Select sample network", ["Karate Club", "Les Miserables"]
+            )
+            if sample_option == "Karate Club":
+                G = nx.karate_club_graph()
+            elif sample_option == "Les Miserables":
+                G = nx.les_miserables_graph()
 
-    # Option to show or hide edges
-    show_edges = st.sidebar.checkbox("Show Edges", value=True)
+        # Graph Generator
+        elif data_source == "Graph Generator":
+            generator_type = st.selectbox(
+                "Select generator type",
+                [
+                    "Complete Graph",
+                    "Random (Erdős-Rényi)",
+                    "Small World (Watts-Strogatz)",
+                    "Scale-free (Barabási-Albert)",
+                ],
+            )
 
-    # Apply layout algorithm based on selection
-    if layout_option == "spring":
-        pos = nx.spring_layout(G, k=node_spacing / 10.0)
-    elif layout_option == "kamada_kawai":
-        pos = nx.kamada_kawai_layout(G)
-    elif layout_option == "circular":
-        pos = nx.circular_layout(G)
-    else:
-        pos = nx.random_layout(G)
+            if generator_type == "Complete Graph":
+                n = st.slider("Number of nodes", 3, 100, 20)
+                G = nx.complete_graph(n)
 
-    # Apply centrality measure to determine node sizes
-    if centrality_option == "degree":
-        centrality = nx.degree_centrality(G)
-    elif centrality_option == "betweenness":
-        centrality = nx.betweenness_centrality(G)
-    elif centrality_option == "closeness":
-        centrality = nx.closeness_centrality(G)
-    else:
-        centrality = nx.pagerank(G)
+            elif generator_type == "Random (Erdős-Rényi)":
+                n = st.slider("Number of nodes", 3, 100, 20)
+                p = st.slider("Edge probability", 0.0, 1.0, 0.2)
+                G = nx.erdos_renyi_graph(n, p)
 
-    # Node sizes based on centrality measure
-    node_sizes = [centrality[node] * 1000 for node in G.nodes]
+            elif generator_type == "Small World (Watts-Strogatz)":
+                n = st.slider("Number of nodes", 100, 1000, 200)
+                k = st.slider("Number of nearest neighbors", 4, 20, 6)
+                p = st.slider("Rewiring probability", 0.0, 1.0, 0.1)
+                G = nx.watts_strogatz_graph(n, k, p)
 
-    # Detect communities if requested
-    st.markdown("---")  # Add separator
-    show_communities = st.checkbox("Detect Communities")
-    communities = None
-    community_stats_container = st.empty()  # Placeholder for community stats
+            elif generator_type == "Scale-free (Barabási-Albert)":
+                n = st.slider("Number of nodes", 100, 1000, 200)
+                m = st.slider("Number of edges to attach", 1, 10, 3)
+                G = nx.barabasi_albert_graph(n, m)
 
-    if show_communities:
-        try:
-            # Detect communities
-            edges_str = str(list(G.edges()))
-            communities_iter = detect_communities(edges_str)
-            communities = {}
+        # Upload Network
+        elif data_source == "Upload Network":
+            file_format = st.selectbox("Choose file format", ["CSV", "GML", "GraphML"])
+            uploaded_file = st.file_uploader(
+                "Upload network file", type=["csv", "gml", "graphml"]
+            )
 
-            # Create a list to store community sizes
-            community_sizes = []
+            if uploaded_file:
+                G = load_network_from_file(uploaded_file, file_format)
+                if G is None:
+                    st.info("Please ensure your file is properly formatted")
+                    st.stop()
 
-            for idx, community in enumerate(communities_iter):
-                community_sizes.append(len(community))
-                for node in community:
-                    communities[node] = idx
+            else:
+                st.info("Please upload a network file or use other data sources")
+                st.stop()
 
-            # Display community statistics
-            with community_stats_container.container():
-                st.caption("Community Statistics")
-                st.metric("Number of Communities", len(communities_iter))
-                avg_size = sum(community_sizes) / len(community_sizes)
-                st.metric("Average Community Size", f"{avg_size:.1f}")
+    if G is not None:
+        # Visualization Options
+        st.subheader("Visualization Options")
 
-                # Sort communities by size
-                community_df = pd.DataFrame(
-                    {"Community": range(len(community_sizes)), "Size": community_sizes}
-                ).sort_values("Size", ascending=False)
+        # Layout selection
+        layout_option = st.selectbox(
+            "Layout Algorithm", ["spring", "kamada_kawai", "circular", "random"]
+        )
 
-                st.caption("Community Sizes (sorted by size):")
-                st.dataframe(
-                    community_df,
-                    hide_index=True,
-                    height=min(len(community_sizes) * 35 + 38, 300),
-                )
+        # Centrality metrics selection
+        centrality_option = st.selectbox(
+            "Node Size By", ["degree", "betweenness", "closeness", "pagerank"]
+        )
 
-        except Exception as e:
-            st.warning(f"Could not detect communities: {str(e)}")
+        # Size controls
+        scale_factor = st.slider(
+            "Graph Size",
+            min_value=500,
+            max_value=3000,
+            value=1000,
+            step=100,
+            help="Adjust the overall size of the graph",
+        )
 
-    # Visualize the graph using matplotlib and networkx
-    fig, ax = plt.subplots(figsize=(10, 8))  # Set the figure size
-    nx.draw(
-        G,
-        pos,
-        ax=ax,
-        with_labels=True,
-        node_size=node_sizes,
-        node_color="skyblue",
-        font_size=font_size,
-        font_weight="bold",
-        edge_color="gray",
-    )
+        if layout_option == "spring":
+            node_spacing = st.slider(
+                "Node Spacing",
+                min_value=1.0,
+                max_value=20.0,
+                value=5.0,
+                step=1.0,
+                help="Adjust the spacing between nodes (only for spring layout)",
+            )
+        else:
+            node_spacing = 2.0
 
-    # Display the plot in Streamlit
-    st.pyplot(fig)
+        node_size_range = st.slider(
+            "Node Size Range",
+            min_value=5,
+            max_value=200,
+            value=(10, 50),
+            step=5,
+            help="Set the minimum and maximum node sizes",
+        )
 
-    # Word Cloud for keyword frequency
-    st.subheader("Keyword Frequency Word Cloud")
-    all_keywords = sum(sample_data["keyword"], [])
-    word_freq = pd.Series(all_keywords).value_counts()
-    wordcloud = WordCloud(width=800, height=400).generate_from_frequencies(word_freq)
-    st.image(wordcloud.to_array(), use_container_width=True)
+        # Node label font size
+        font_size = st.slider(
+            "Label Font Size",
+            min_value=8,
+            max_value=40,
+            value=16,
+            step=2,
+            help="Adjust the font size of node labels",
+        )
+
+        # Edge visibility toggle
+        show_edges = st.checkbox(
+            "Show Edges", value=True, help="Toggle edge visibility"
+        )
+
+        # Community detection checkbox
+        show_communities = st.checkbox("Detect Communities")
+
+        # Initialize communities variable
+        communities = None
+        community_stats_container = st.empty()  # Create a placeholder for stats
+
+        if show_communities:
+            try:
+                edges_str = str(list(G.edges()))
+                communities_iter = detect_communities(edges_str)
+                communities = {}
+
+                # Create a list to store community sizes
+                community_sizes = []
+
+                for idx, community in enumerate(communities_iter):
+                    community_sizes.append(len(community))
+                    for node in community:
+                        communities[node] = idx
+
+                # Use the placeholder to display community statistics
+                with community_stats_container.container():
+                    st.caption("Community Statistics")
+                    st.metric("Number of Communities", len(communities_iter))
+                    avg_size = sum(community_sizes) / len(community_sizes)
+                    st.metric("Average Community Size", f"{avg_size:.1f}")
+
+                    # Sort communities by size in descending order
+                    community_df = pd.DataFrame(
+                        {
+                            "Community": range(len(community_sizes)),
+                            "Size": community_sizes,
+                        }
+                    ).sort_values("Size", ascending=False)
+
+                    st.caption("Community Sizes (sorted by size):")
+                    st.dataframe(
+                        community_df,
+                        hide_index=True,
+                        height=min(len(community_sizes) * 35 + 38, 300),
+                    )
+
+            except Exception as e:
+                st.warning(f"Could not detect communities: {str(e)}")
+
+        # Main visualization area (now full width)
+        if G is not None:
+            # Initialize analyzers and visualizer
+            analyzer = NetworkAnalyzer(G)
+            visualizer = NetworkVisualizer(G)
+
+            # Display basic stats in a more compact form
+            st.text(
+                f"Nodes: {len(G.nodes())} | Edges: {len(G.edges())} | "
+                f"Density: {nx.density(G):.3f}"
+            )
+
+            # Create and display visualization with increased height
+            html_file = visualizer.create_interactive_network(
+                communities=communities,
+                layout=layout_option,
+                centrality_metric=centrality_option,
+                scale_factor=scale_factor,
+                node_spacing=node_spacing,
+                node_size_range=node_size_range,
+                show_edges=show_edges,
+                font_size=font_size,
+            )
+
+            st.markdown(
+                f'<iframe src="{html_file}" width="100%" height="700px" frameborder="0"></iframe>',
+                unsafe_allow_html=True,
+            )
