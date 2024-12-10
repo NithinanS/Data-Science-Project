@@ -10,6 +10,7 @@ from wordcloud import WordCloud
 import networkx as nx
 import geopandas as gpd
 from shapely.geometry import Point
+from pyvis.network import Network
 
 df2018 = pd.read_csv("FilteredDataWithYear/data2018.csv")
 df2019 = pd.read_csv("FilteredDataWithYear/data2019.csv")
@@ -20,9 +21,16 @@ df2023 = pd.read_csv("FilteredDataWithYear/data2023.csv")
 
 df_all_years = pd.concat([df2018, df2019, df2020, df2021, df2022, df2023])
 
-df_all_years["keyword"] = df_all_years["keyword"].apply(
-    lambda x: eval(x)
-)
+df_all_years["keyword"] = df_all_years["keyword"].apply(lambda x: eval(x))
+
+@st.cache_data
+def detect_communities(edges_str: str):
+    """Community detection using greedy modularity communities"""
+    # Recreate graph from edges string
+    edges = eval(edges_str)
+    G = nx.Graph(edges)
+    return list(nx.community.greedy_modularity_communities(G))
+
 
 st.title("Data Visualization")
 
@@ -150,54 +158,54 @@ elif topic == "Data Visualization":
 
     else:
         year_data_map = {
-            '2018': df2018,
-            '2019': df2019,
-            '2020': df2020,
-            '2021': df2021,
-            '2022': df2022,
-            '2023': df2023,
+            "2018": df2018,
+            "2019": df2019,
+            "2020": df2020,
+            "2021": df2021,
+            "2022": df2022,
+            "2023": df2023,
         }
 
         if year in year_data_map:
             data = year_data_map[year]
 
-            subject_data = data['subjectCode'].value_counts().reset_index()
-            subject_data.columns = ['Subject Code', 'Count']
+            subject_data = data["subjectCode"].value_counts().reset_index()
+            subject_data.columns = ["Subject Code", "Count"]
 
-            st.header(f'Histogram of Subject Codes for {year}')
+            st.header(f"Histogram of Subject Codes for {year}")
 
             fig = px.histogram(
-                subject_data, 
-                x='Subject Code', 
-                y='Count',
-                labels={'Subject Code': 'Subject', 'Count': 'Count'}
+                subject_data,
+                x="Subject Code",
+                y="Count",
+                labels={"Subject Code": "Subject", "Count": "Count"},
             )
             st.plotly_chart(fig)
 
-            top_categories = subject_data['Subject Code'].head(10)
-            st.write('---')
+            top_categories = subject_data["Subject Code"].head(10)
+            st.write("---")
             st.header(f"Trend of Top 10 Subjects for {year}")
 
             categories = st.multiselect(
-                "Select Categories",
-                options=top_categories,
-                default=top_categories
+                "Select Categories", options=top_categories, default=top_categories
             )
 
             if categories:
-                filtered_data = data[data['subjectCode'].isin(categories)]
+                filtered_data = data[data["subjectCode"].isin(categories)]
 
                 # Count occurrences of the selected categories
-                category_counts = filtered_data['subjectCode'].value_counts().reset_index()
-                category_counts.columns = ['Subject Code', 'Count']
+                category_counts = (
+                    filtered_data["subjectCode"].value_counts().reset_index()
+                )
+                category_counts.columns = ["Subject Code", "Count"]
 
                 # Plot a pie chart instead of a stacked bar chart
                 fig1 = px.pie(
-                    category_counts, 
-                    names='Subject Code', 
-                    values='Count', 
+                    category_counts,
+                    names="Subject Code",
+                    values="Count",
                     title=f"Distribution of Selected Subjects for {year}",
-                    labels={'Subject Code': 'Subject', 'Count': 'Count'}
+                    labels={"Subject Code": "Subject", "Count": "Count"},
                 )
                 st.plotly_chart(fig1)
 
@@ -236,28 +244,31 @@ elif topic == "Spatial Data Visualization":
 
 elif topic == "Network Visualization":
     st.header("Network Visualization")
-    
+
+    # Sidebar for sample size selection
     sample_size = st.sidebar.slider(
         "Select the number of samples for network visualization",
-        min_value=5,
+        min_value=10,
         max_value=50,
-        value=20,  # default value
+        value=20,
         step=5,
     )
 
-    sample_data = df_all_years.sample(
-        n=sample_size, random_state=42
-    )  # random sample with a fixed seed for reproducibility
+    # Randomly sample data for visualization
+    sample_data = df_all_years.sample(n=sample_size, random_state=42)
 
+    # Generate edges for the graph from the 'keyword' column
     edges = []
     for keywords in sample_data["keyword"]:
         for i, k1 in enumerate(keywords[:-1]):
             for k2 in keywords[i + 1 :]:
                 edges.append((k1, k2))
 
+    # Initialize the graph using NetworkX
     G = nx.Graph()
     G.add_edges_from(edges)
 
+    # Sidebar options for layout and centrality measure
     layout_option = st.sidebar.selectbox(
         "Select layout for visualization",
         ["spring", "kamada_kawai", "circular", "random"],
@@ -268,13 +279,13 @@ elif topic == "Network Visualization":
         ["degree", "betweenness", "closeness", "pagerank"],
     )
 
+    # Sidebar sliders for customization
     node_size_range = st.sidebar.slider(
         "Node Size Range",
         min_value=5,
         max_value=200,
         value=(10, 50),
         step=5,
-        help="Set the minimum and maximum node sizes",
     )
 
     graph_size = st.sidebar.slider(
@@ -283,9 +294,9 @@ elif topic == "Network Visualization":
         max_value=3000,
         value=1000,
         step=100,
-        help="Adjust the overall size of the graph",
     )
 
+    # Adjust node spacing for spring layout
     if layout_option == "spring":
         node_spacing = st.sidebar.slider(
             "Node Spacing",
@@ -293,40 +304,39 @@ elif topic == "Network Visualization":
             max_value=20.0,
             value=5.0,
             step=1.0,
-            help="Adjust the spacing between nodes (only for spring layout)",
         )
     else:
         node_spacing = 2.0
 
+    # Font size and style for node labels
     font_size = st.sidebar.slider(
         "Label Font Size",
         min_value=8,
         max_value=40,
         value=16,
         step=2,
-        help="Adjust the font size of node labels",
     )
 
     font_style = st.sidebar.selectbox(
         "Select Font Style",
         ["Arial", "Comic Sans MS", "Courier New", "Tahoma", "Times New Roman"],
-        index=0,  # Default is Arial
-        help="Choose a font style for the node labels",
+        index=0,
     )
 
-    show_edges = st.sidebar.checkbox(
-        "Show Edges", value=True, help="Toggle visibility of edges"
-    )
+    # Option to show or hide edges
+    show_edges = st.sidebar.checkbox("Show Edges", value=True)
 
+    # Apply layout algorithm based on selection
     if layout_option == "spring":
         pos = nx.spring_layout(G, k=node_spacing / 10.0)
     elif layout_option == "kamada_kawai":
         pos = nx.kamada_kawai_layout(G)
     elif layout_option == "circular":
         pos = nx.circular_layout(G)
-    else:  # Random layout
+    else:
         pos = nx.random_layout(G)
 
+    # Apply centrality measure to determine node sizes
     if centrality_option == "degree":
         centrality = nx.degree_centrality(G)
     elif centrality_option == "betweenness":
@@ -336,27 +346,72 @@ elif topic == "Network Visualization":
     else:
         centrality = nx.pagerank(G)
 
+    # Node sizes based on centrality measure
     node_sizes = [centrality[node] * 1000 for node in G.nodes]
 
-    fig, ax = plt.subplots(figsize=(8, 8))
+    # Detect communities if requested
+    st.markdown("---")  # Add separator
+    show_communities = st.checkbox("Detect Communities")
+    communities = None
+    community_stats_container = st.empty()  # Placeholder for community stats
 
+    if show_communities:
+        try:
+            # Detect communities
+            edges_str = str(list(G.edges()))
+            communities_iter = detect_communities(edges_str)
+            communities = {}
+
+            # Create a list to store community sizes
+            community_sizes = []
+
+            for idx, community in enumerate(communities_iter):
+                community_sizes.append(len(community))
+                for node in community:
+                    communities[node] = idx
+
+            # Display community statistics
+            with community_stats_container.container():
+                st.caption("Community Statistics")
+                st.metric("Number of Communities", len(communities_iter))
+                avg_size = sum(community_sizes) / len(community_sizes)
+                st.metric("Average Community Size", f"{avg_size:.1f}")
+
+                # Sort communities by size
+                community_df = pd.DataFrame(
+                    {"Community": range(len(community_sizes)), "Size": community_sizes}
+                ).sort_values("Size", ascending=False)
+
+                st.caption("Community Sizes (sorted by size):")
+                st.dataframe(
+                    community_df,
+                    hide_index=True,
+                    height=min(len(community_sizes) * 35 + 38, 300),
+                )
+
+        except Exception as e:
+            st.warning(f"Could not detect communities: {str(e)}")
+
+    # Visualize the graph using matplotlib and networkx
+    fig, ax = plt.subplots(figsize=(10, 8))  # Set the figure size
     nx.draw(
         G,
         pos,
+        ax=ax,
         with_labels=True,
-        node_color="skyblue",
         node_size=node_sizes,
+        node_color="skyblue",
         font_size=font_size,
         font_weight="bold",
-        ax=ax,
-        width=2 if show_edges else 0,
-        font_family=font_style,
+        edge_color="gray",
     )
 
+    # Display the plot in Streamlit
     st.pyplot(fig)
 
+    # Word Cloud for keyword frequency
     st.subheader("Keyword Frequency Word Cloud")
     all_keywords = sum(sample_data["keyword"], [])
     word_freq = pd.Series(all_keywords).value_counts()
     wordcloud = WordCloud(width=800, height=400).generate_from_frequencies(word_freq)
-    st.image(wordcloud.to_array(), use_column_width=True)
+    st.image(wordcloud.to_array(), use_container_width=True)
