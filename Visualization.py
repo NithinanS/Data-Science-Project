@@ -11,18 +11,50 @@ import networkx as nx
 from pyvis.network import Network
 import geopandas as gpd
 from shapely.geometry import Point
+from pymongo import MongoClient
+import ast
 
-df2018 = pd.read_csv("data/Data2018.csv")
-df2019 = pd.read_csv("data/Data2019.csv")
-df2020 = pd.read_csv("data/Data2020.csv")
-df2021 = pd.read_csv("data/Data2021.csv")
-df2022 = pd.read_csv("data/Data2022.csv")
-df2023 = pd.read_csv("data/Data2023.csv")
+# MongoDB connection setup
+MONGO_URI = "mongodb+srv://root:root@dspaper.q2lhg.mongodb.net/"
+DATABASE_NAME = "DSDE"
+COLLECTION_NAMES = ["data2018", "data2019", "data2020", "data2021", "data2022", "data2023"]
 
-df_all_years = pd.concat([df2018, df2019, df2020, df2021, df2022, df2023])
+@st.cache_data
+def load_data_from_mongodb():
+    """Load data from MongoDB."""
+    client = MongoClient(MONGO_URI)
+    db = client[DATABASE_NAME]
+    
+    # Fetch each year's data and store them as individual DataFrames
+    df2018 = pd.DataFrame(list(db["data2018"].find()))
+    df2019 = pd.DataFrame(list(db["data2019"].find()))
+    df2020 = pd.DataFrame(list(db["data2020"].find()))
+    df2021 = pd.DataFrame(list(db["data2021"].find()))
+    df2022 = pd.DataFrame(list(db["data2022"].find()))
+    df2023 = pd.DataFrame(list(db["data2023"].find()))
+    lang2018 = pd.DataFrame(list(db["languageData2018"].find()))
+    lang2019 = pd.DataFrame(list(db["languageData2019"].find()))
+    lang2020 = pd.DataFrame(list(db["languageData2020"].find()))
+    lang2021 = pd.DataFrame(list(db["languageData2021"].find()))
+    lang2022 = pd.DataFrame(list(db["languageData2022"].find()))
+    lang2023 = pd.DataFrame(list(db["languageData2023"].find()))
 
-df_all_years["keyword"] = df_all_years["keyword"].apply(lambda x: eval(x))
+    lang_list = [lang2018, lang2019, lang2020, lang2021, lang2022, lang2023]
+    
+    # Process the 'keyword' column safely
+    for df in [df2018, df2019, df2020, df2021, df2022, df2023]:
+        if "keyword" in df.columns:
+            df["keyword"] = df["keyword"].apply(
+                lambda x: ast.literal_eval(x) if isinstance(x, str) else []
+            )
+    
+    return df2018, df2019, df2020, df2021, df2022, df2023, lang_list
 
+# Load data from MongoDB
+df2018, df2019, df2020, df2021, df2022, df2023, lang_list = load_data_from_mongodb()
+
+# Combine all years into one DataFrame
+df_all_years = pd.concat([df2018, df2019, df2020, df2021, df2022, df2023], ignore_index=True)
 
 
 @st.cache_data  # Credit: Veera Muangsin
@@ -33,7 +65,7 @@ def detect_communities(edges_str: str):
     G = nx.Graph(edges)
     return list(nx.community.greedy_modularity_communities(G))
 
-st.set_page_config(page_title="Data Visualization", layout="wide")
+# st.set_page_config(page_title="Data Visualization", layout="wide")
 st.title("Data Visualization")
 
 st.markdown(
@@ -347,9 +379,10 @@ elif topic == "Data Visualization":
             else:
                 st.write("Please select at least one category.")
 
-            lang = pd.read_csv(f"data/languageData{year}.csv")
-            # st.error("Selected year data is unavailable.")
-            categories = lang["language.@xml:lang"].tolist()
+            # lang = pd.read_csv(f"data/languageData{year}.csv")
+            lang = lang_list[int(year) - 2018]
+            lang['xml_lang'] = lang['language'].apply(lambda x: x.get('@xml:lang') if isinstance(x, dict) else None)            # st.error("Selected year data is unavailable.")
+            categories = lang['xml_lang'].tolist()
             values = lang["count"].tolist()
             N = len(categories)
             angles = np.linspace(0, 2 * np.pi, N, endpoint=False).tolist()
