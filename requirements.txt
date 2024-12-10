@@ -10,3 +10,4 @@ pyvis
 geopandas
 shapely
 scipy
+MongoClient
